@@ -37,38 +37,54 @@ class NAVTracker:
                 writer.writeheader()
     
     def save_calculation(self, fund_name, calculated_nav, equity_portion):
-        """Save today's calculation to CSV if different from existing entry after 3:30 PM"""
+        """Save today's calculation to CSV with proper path handling and duplicate checking"""
+        # Use absolute path for consistent behavior across environments
+        csv_path = os.path.abspath(self.CSV_FILE)
         today = date.today().strftime("%d/%m/%Y")
         now = datetime.now()
         now_time_str = now.strftime("%H:%M:%S")
-        calculation_time = now.time()
-
         new_nav_rounded = round(calculated_nav, 4)
+        
+        # Debug info
+        print(f"\n=== Debug: Saving Calculation ===")
+        print(f"CSV Path: {csv_path}")
+        print(f"Current Directory: {os.getcwd()}")
+        print(f"File Exists: {os.path.exists(csv_path)}")
+        print(f"Time: {now_time_str} | NAV: {new_nav_rounded}")
 
-        # Read existing records
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+        
+        # Read existing data if file exists
         existing_rows = []
-        try:
-            with open(self.CSV_FILE, mode='r') as file:
-                reader = csv.DictReader(file)
-                existing_rows = list(reader)
-        except FileNotFoundError:
-            pass  # Will be created below
+        if os.path.exists(csv_path):
+            try:
+                with open(csv_path, mode='r') as file:
+                    reader = csv.DictReader(file)
+                    existing_rows = list(reader)
+                    print(f"Found {len(existing_rows)} existing records")
+            except Exception as e:
+                print(f"⚠️ Error reading existing CSV: {str(e)}")
+                existing_rows = []
 
-        # Check if record already exists for today after 3:30 PM with same calculated_nav
-        for row in reversed(existing_rows):
-            if row['date'] == today and row['fund_name'] == fund_name:
+        # Check for duplicates after 3:30 PM
+        cutoff_time = datetime.strptime("15:30:00", "%H:%M:%S").time()
+        if now.time() >= cutoff_time:
+            for row in reversed(existing_rows):
                 try:
-                    row_time = datetime.strptime(row['calculation_time'], "%H:%M:%S").time()
-                    if row_time >= datetime.strptime("15:30:00", "%H:%M:%S").time():
-                        existing_nav = float(row['calculated_nav'])
-                        if round(existing_nav, 4) == new_nav_rounded:
-                            print("Calculation already saved with same NAV after 3:30 PM. Skipping save.")
-                            return  # Do nothing
-                except (ValueError, TypeError):
-                    pass
+                    if (row['date'] == today and 
+                        row['fund_name'] == fund_name and
+                        float(row['calculated_nav']) == new_nav_rounded and
+                        datetime.strptime(row['calculation_time'], "%H:%M:%S").time() >= cutoff_time):
+                        
+                        print("🔄 Duplicate entry found (same NAV after 3:30 PM). Skipping save.")
+                        return
+                except (ValueError, KeyError) as e:
+                    print(f"⚠️ Error parsing row: {str(e)}")
+                    continue
 
-        # If not found or different, save new calculation
-        data = {
+        # Prepare new data
+        new_data = {
             'date': today,
             'calculation_time': now_time_str,
             'calculated_nav': new_nav_rounded,
@@ -79,16 +95,18 @@ class NAVTracker:
             'equity_portion': equity_portion
         }
 
-        # Add this debug code to your MutualFundAnalyzer.py right before saving:
-        print(f"\nDebug: Attempting to save to {NAVTracker.CSV_FILE}")
-        print(f"Current working directory: {os.getcwd()}")
-        print(f"File exists before save: {os.path.exists(NAVTracker.CSV_FILE)}")
-
-        with open(self.CSV_FILE, mode='a', newline='') as file:
-            writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
-            writer.writerow(data)
-
-        print(f"\nSaved today's calculation to {self.CSV_FILE}")
+        # Write to CSV (append if exists, create new otherwise)
+        try:
+            file_exists = os.path.exists(csv_path)
+            with open(csv_path, mode='a' if file_exists else 'w', newline='') as file:
+                writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
+                if not file_exists:
+                    writer.writeheader()
+                writer.writerow(new_data)
+            print(f"✅ Saved new entry: {new_data}")
+        except Exception as e:
+            print(f"❌ Failed to save: {str(e)}")
+            raise
 
     
     def get_previous_calculation(self, fund_name):
