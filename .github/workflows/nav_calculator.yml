@@ -8,45 +8,67 @@ on:
 jobs:
   calculate:
     runs-on: ubuntu-latest
+    timeout-minutes: 15       # Prevent hanging jobs
+    
     steps:
+      # Checkout code
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      # Setup Python
+      - name: Set up Python 3.10
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
+      # Install dependencies
       - name: Install dependencies
         run: |
+          pip install --upgrade pip
           pip install -r requirements.txt
-          pip install gspread oauth2client selenium webdriver-manager
+          pip install gspread oauth2client
 
+      # Install Chrome for Selenium
       - name: Install Chrome
         run: |
           sudo apt-get update
           sudo apt-get install -y chromium-browser chromium-driver
+          echo "CHROME_PATH=$(which chromium-browser)" >> $GITHUB_ENV
 
-      - name: Run NAV Calculator
-        run: python main.py
-
-      - name: Verify CSV creation
+      # Environment debug
+      - name: Debug info
         run: |
-          echo "=== File Verification ==="
+          echo "Python path: $(which python)"
+          echo "Chrome path: ${{ env.CHROME_PATH }}"
+          echo "Current dir: $(pwd)"
+          echo "Files:"
           ls -la
-          [ -f nav_comparison.csv ] && echo "CSV exists" || echo "CSV missing"
-          head nav_comparison.csv || true
 
-      - name: Upload to Google Sheets
+      # Run main calculation
+      - name: Calculate NAV
+        run: python main.py
+        env:
+          TZ: Asia/Kolkata    # Set timezone for proper timestamps
+
+      # Verify CSV output
+      - name: Verify results
         run: |
-          echo "=== Google Sheets Upload ==="
-          python upload_to_sheets.py
+          echo "=== CSV Contents ==="
+          [ -f nav_comparison.csv ] && cat nav_comparison.csv || echo "No CSV generated"
+          echo "===================="
+
+      # Upload to Google Sheets
+      - name: Update Google Sheet
+        if: always()  # Runs even if previous steps fail
+        run: python upload_to_sheets.py
         env:
           GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
 
+      # Archive results
       - name: Archive results
         uses: actions/upload-artifact@v4
         with:
-          name: nav-results
+          name: nav-results-${{ github.run_id }}
           path: |
             nav_comparison.csv
             *.log
+          retention-days: 7
