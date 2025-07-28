@@ -1,163 +1,85 @@
-# name: NAV Calculator Automation
-# on:
-#   schedule:
-#     - cron: '00 3 * * 1-5'   # 8:30 AM IST (Mon-Fri)
-#     - cron: '10 10 * * 1-5'  # 3:40 PM IST (Mon-Fri)
-#   workflow_dispatch:          # Allow manual triggers
-
-# jobs:
-#   calculate:
-#     runs-on: ubuntu-latest
-#     timeout-minutes: 15       # Prevent hanging jobs
-    
-#     steps:
-#       # Checkout code
-#       - uses: actions/checkout@v4
-
-#       # Setup Python
-#       - name: Set up Python 3.10
-#         uses: actions/setup-python@v4
-#         with:
-#           python-version: '3.10'
-
-#       # Install dependencies
-#       - name: Install dependencies
-#         run: |
-#           pip install --upgrade pip
-#           pip install -r requirements.txt
-#           pip install gspread oauth2client
-
-#       # Install Chrome for Selenium
-#       - name: Install Chrome
-#         run: |
-#           sudo apt-get update
-#           sudo apt-get install -y chromium-browser chromium-driver
-#           echo "CHROME_PATH=$(which chromium-browser)" >> $GITHUB_ENV
-
-#       # Environment debug
-#       - name: Debug info
-#         run: |
-#           echo "Python path: $(which python)"
-#           echo "Chrome path: ${{ env.CHROME_PATH }}"
-#           echo "Current dir: $(pwd)"
-#           echo "Files:"
-#           ls -la
-
-#       # Run main calculation
-#       - name: Calculate NAV
-#         run: python main.py
-#         env:
-#           TZ: Asia/Kolkata    # Set timezone for proper timestamps
-
-#       # Verify CSV output
-#       - name: Verify results
-#         run: |
-#           echo "=== CSV Contents ==="
-#           [ -f nav_comparison.csv ] && cat nav_comparison.csv || echo "No CSV generated"
-#           echo "===================="
-
-#       # Upload to Google Sheets
-#       - name: Update Google Sheet
-#         if: always()  # Runs even if previous steps fail
-#         run: python upload_to_sheets.py
-#         env:
-#           GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
-
-#       # Archive results
-#       - name: Archive results
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: nav-results-${{ github.run_id }}
-#           path: |
-#             nav_comparison.csv
-#             *.log
-#           retention-days: 7
-
-
-
-
-
-
-
-
 name: NAV Calculator Automation
 on:
   schedule:
     - cron: '00 3 * * 1-5'   # 8:30 AM IST (Mon-Fri)
     - cron: '10 10 * * 1-5'  # 3:40 PM IST (Mon-Fri)
-  workflow_dispatch:          # Allow manual triggers
+  workflow_dispatch:
 
 jobs:
   calculate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     env:
       TZ: Asia/Kolkata
-    
+      PIP_CACHE_DIR: ~/.cache/pip
+      CHROME_PATH: /usr/bin/chromium-browser
+
     steps:
-      # Cache Python dependencies
-      - uses: actions/cache@v3
+      # Checkout code
+      - uses: actions/checkout@v4
+
+      # Cache setup
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
         id: pip-cache
         with:
           path: |
-            ~/.cache/pip
+            ${{ env.PIP_CACHE_DIR }}
             /opt/hostedtoolcache/Python
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      # Cache Chrome installation
-      - uses: actions/cache@v3
+      - name: Cache Chrome
+        uses: actions/cache@v3
         id: chrome-cache
         with:
-          path: /usr/bin/chromium-browser
+          path: ${{ env.CHROME_PATH }}
           key: ${{ runner.os }}-chrome-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-chrome-
 
-      # Checkout code
-      - uses: actions/checkout@v4
-
-      # Setup Python
-      - name: Set up Python 3.10
+      # Python setup (only if cache missed)
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          cache: 'pip'  # Additional caching layer
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
 
-      # Install dependencies (only if cache missed)
-      - name: Install dependencies
+      # Install Python dependencies (only if cache missed)
+      - name: Install Python packages
         if: steps.pip-cache.outputs.cache-hit != 'true'
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install gspread oauth2client
 
       # Install Chrome (only if cache missed)
-      - name: Install Chrome
+      - name: Install Chrome dependencies
         if: steps.chrome-cache.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y chromium-browser chromium-driver
-          echo "CHROME_PATH=$(which chromium-browser)" >> $GITHUB_ENV
+          sudo apt-get update -qqy
+          sudo apt-get install -qqy --no-install-recommends \
+            chromium-browser \
+            chromium-driver
+          echo "Chrome version: $(chromium-browser --version)"
 
-      # Run main calculation
-      - name: Calculate NAV
-        run: python main.py
+      # Main execution
+      - name: Run NAV calculation
+        run: python -u main.py
 
-      # Upload to Google Sheets
+      # Google Sheets upload
       - name: Update Google Sheet
         if: always()
-        run: python upload_to_sheets.py
+        run: python -u upload_to_sheets.py
         env:
           GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
 
       # Archive results
-      - name: Archive results
+      - name: Archive output
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nav-results-${{ github.run_id }}
           path: |
             nav_comparison.csv
             *.log
-          retention-days: 7
+          retention-days: 3
