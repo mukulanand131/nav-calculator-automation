@@ -1,17 +1,9 @@
 name: NAV Calculator Automation
 on:
   schedule:
-<<<<<<< HEAD
     - cron: '*/2 * * * *'  # Every 5 minutes (UTC)
-=======
-<<<<<<< Updated upstream
-    - cron: '00 3 * * 1-5'   # 8:30 AM IST
-    - cron: '10 10 * * 1-5'  # 3:40 PM IST
->>>>>>> 29b87e8 (Initial commit with NAV calculator automation)
   workflow_dispatch:
-=======
-    - cron: '40 9 * * *'  # Temporary test time (2:48 PM UTC = 8:18 PM IST)
->>>>>>> Stashed changes
+
 
 jobs:
   calculate:
