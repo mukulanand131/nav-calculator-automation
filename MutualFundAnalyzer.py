@@ -79,6 +79,11 @@ class NAVTracker:
             'equity_portion': equity_portion
         }
 
+        # Add this debug code to your MutualFundAnalyzer.py right before saving:
+        print(f"\nDebug: Attempting to save to {NAVTracker.CSV_FILE}")
+        print(f"Current working directory: {os.getcwd()}")
+        print(f"File exists before save: {os.path.exists(NAVTracker.CSV_FILE)}")
+
         with open(self.CSV_FILE, mode='a', newline='') as file:
             writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
             writer.writerow(data)
