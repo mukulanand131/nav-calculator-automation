@@ -1,8 +1,7 @@
 name: NAV Calculator Automation
 on:
   schedule:
-    - cron: '00 3 * * 2-6'   # 8:30 AM IST (Tue-Sat)
-    - cron: '35 12 * * 1-5'  # 3:40 PM IST (Mon-Fri)
+    - cron: '*/2 * * * *'  # Every 5 minutes (UTC)
   workflow_dispatch:
 
 jobs:
