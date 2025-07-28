@@ -230,7 +230,6 @@ class MutualFundAnalyzer:
     def _get_equity_percentage_parallel(self):
         """Fetch equity percentage using Selenium in parallel with other operations"""
         def fetch_equity():
-            driver = None  # Initialize driver variable
             try:
                 chrome_options = Options()
                 chrome_options.add_argument("--headless=new")
@@ -269,13 +268,12 @@ class MutualFundAnalyzer:
                 print(f"Error fetching equity percentage: {str(e)}")
                 return None
             finally:
-                if driver is not None:  # Only quit if driver was successfully created
-                    driver.quit()
+                driver.quit()
 
         # Start equity fetching in parallel
         with ThreadPoolExecutor(max_workers=1) as executor:
             equity_future = executor.submit(fetch_equity)
-
+            
             # Proceed with other operations while equity fetches
             if not self._fetch_mf_data_without_equity():
                 return False
