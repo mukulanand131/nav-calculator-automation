@@ -1,34 +1,29 @@
 name: NAV Calculator Automation
 on:
-  workflow_dispatch:  # Allows manual triggering
   schedule:
-    - cron: '53 14 * * *'  # Temporary test time (2:48 PM UTC = 8:18 PM IST)
+    - cron: '00 3 * * 1-5'   # 8:30 AM IST
+    - cron: '10 10 * * 1-5'  # 3:40 PM IST
+  workflow_dispatch:
 
 jobs:
   calculate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          
+        run: pip install -r requirements.txt
       - name: Install Chrome
         run: |
           sudo apt-get update
           sudo apt-get install -y chromium-browser chromium-driver
-          
       - name: Run NAV Calculator
         run: python main.py
-        
       - name: Upload Results
-        uses: actions/upload-artifact@v4  # Updated to v4
+        uses: actions/upload-artifact@v4  # ← Changed from v3 to v4
         with:
           name: nav-results
           path: nav_comparison.csv
