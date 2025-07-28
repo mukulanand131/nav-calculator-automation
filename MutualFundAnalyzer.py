@@ -411,7 +411,7 @@ class MutualFundAnalyzer:
 
         # Save today's calculation
         current_time = datetime.now().time()
-        if current_time >= datetime.strptime("15:30:00", "%H:%M:%S").time():
+        if current_time >= datetime.strptime("15:31:00", "%H:%M:%S").time():
             self.tracker.save_calculation(self.fund_name, equity_adjusted_nav, self.equity_portion)
         
         # Show historical comparison
