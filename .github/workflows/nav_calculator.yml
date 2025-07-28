@@ -3,34 +3,50 @@ on:
   schedule:
     - cron: '00 3 * * 1-5'   # 8:30 AM IST (Mon-Fri)
     - cron: '10 10 * * 1-5'  # 3:40 PM IST (Mon-Fri)
-  workflow_dispatch:  # Allow manual triggers
+  workflow_dispatch:          # Allow manual triggers
 
 jobs:
   calculate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          
+
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install selenium webdriver-manager
-          
+          pip install gspread oauth2client selenium webdriver-manager
+
       - name: Install Chrome
         run: |
           sudo apt-get update
           sudo apt-get install -y chromium-browser chromium-driver
-          
+
       - name: Run NAV Calculator
         run: python main.py
-        
-      - name: Upload Results
+
+      - name: Verify CSV creation
+        run: |
+          echo "=== File Verification ==="
+          ls -la
+          [ -f nav_comparison.csv ] && echo "CSV exists" || echo "CSV missing"
+          head nav_comparison.csv || true
+
+      - name: Upload to Google Sheets
+        run: |
+          echo "=== Google Sheets Upload ==="
+          python upload_to_sheets.py
+        env:
+          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
+
+      - name: Archive results
         uses: actions/upload-artifact@v4
         with:
           name: nav-results
-          path: nav_comparison.csv
+          path: |
+            nav_comparison.csv
+            *.log
