@@ -37,27 +37,54 @@ class NAVTracker:
                 writer.writeheader()
     
     def save_calculation(self, fund_name, calculated_nav, equity_portion):
-        """Save today's calculation to CSV"""
+        """Save today's calculation to CSV if different from existing entry after 3:30 PM"""
         today = date.today().strftime("%d/%m/%Y")
-        now = datetime.now().strftime("%H:%M:%S")
-        
-        # Prepare data to save (official_nav will be added tomorrow)
+        now = datetime.now()
+        now_time_str = now.strftime("%H:%M:%S")
+        calculation_time = now.time()
+
+        new_nav_rounded = round(calculated_nav, 4)
+
+        # Read existing records
+        existing_rows = []
+        try:
+            with open(self.CSV_FILE, mode='r') as file:
+                reader = csv.DictReader(file)
+                existing_rows = list(reader)
+        except FileNotFoundError:
+            pass  # Will be created below
+
+        # Check if record already exists for today after 3:30 PM with same calculated_nav
+        for row in reversed(existing_rows):
+            if row['date'] == today and row['fund_name'] == fund_name:
+                try:
+                    row_time = datetime.strptime(row['calculation_time'], "%H:%M:%S").time()
+                    if row_time >= datetime.strptime("15:30:00", "%H:%M:%S").time():
+                        existing_nav = float(row['calculated_nav'])
+                        if round(existing_nav, 4) == new_nav_rounded:
+                            print("Calculation already saved with same NAV after 3:30 PM. Skipping save.")
+                            return  # Do nothing
+                except (ValueError, TypeError):
+                    pass
+
+        # If not found or different, save new calculation
         data = {
             'date': today,
-            'calculation_time': now,
-            'calculated_nav': round(calculated_nav, 4),
+            'calculation_time': now_time_str,
+            'calculated_nav': new_nav_rounded,
             'official_nav': None,
             'difference': None,
             'percentage_diff': None,
             'fund_name': fund_name,
             'equity_portion': equity_portion
         }
-        
+
         with open(self.CSV_FILE, mode='a', newline='') as file:
             writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
             writer.writerow(data)
-        
+
         print(f"\nSaved today's calculation to {self.CSV_FILE}")
+
     
     def get_previous_calculation(self, fund_name):
         """Get yesterday's calculation for comparison"""
@@ -411,7 +438,7 @@ class MutualFundAnalyzer:
 
         # Save today's calculation
         current_time = datetime.now().time()
-        if current_time >= datetime.strptime("15:31:00", "%H:%M:%S").time():
+        if current_time >= datetime.strptime("15:30:00", "%H:%M:%S").time():
             self.tracker.save_calculation(self.fund_name, equity_adjusted_nav, self.equity_portion)
         
         # Show historical comparison
