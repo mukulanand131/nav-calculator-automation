@@ -14,15 +14,11 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 import re
-from datetime import timedelta
-import base64
-import json
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from datetime import timedelta  # Add at top of file
+
 
 class NAVTracker:
-    SPREADSHEET_NAME = "NAV Comparison Tracker"  # Name of your Google Sheet
-    WORKSHEET_NAME = "NAV Data"  # Name of the worksheet/tab
+    CSV_FILE = "nav_comparison.csv"
     FIELD_NAMES = [
         'date', 'calculation_time', 
         'calculated_nav', 'official_nav', 
@@ -31,157 +27,136 @@ class NAVTracker:
     ]
     
     def __init__(self):
-        self.sheet = self._initialize_google_sheet()
+        self.ensure_csv_header()
     
-    def _initialize_google_sheet(self):
-        """Initialize connection to Google Sheets and ensure proper structure"""
-        try:
-            # 1. Decode credentials
-            creds_json = base64.b64decode(os.environ['GDRIVE_CREDENTIALS']).decode('utf-8')
-            creds_dict = json.loads(creds_json)
-            
-            # 2. Authenticate with correct scopes
-            scope = [
-                'https://spreadsheets.google.com/feeds',
-                'https://www.googleapis.com/auth/drive'
-            ]
-            
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-            client = gspread.authorize(creds)
-            print("✓ Google Sheets authentication successful")
-            
-            # 3. Open or create the spreadsheet
-            try:
-                sheet = client.open(self.SPREADSHEET_NAME)
-            except gspread.SpreadsheetNotFound:
-                sheet = client.create(self.SPREADSHEET_NAME)
-                # Share with yourself if needed
-                # sheet.share('your-email@gmail.com', perm_type='user', role='writer')
-            
-            # 4. Get or create the worksheet
-            try:
-                worksheet = sheet.worksheet(self.WORKSHEET_NAME)
-            except gspread.WorksheetNotFound:
-                worksheet = sheet.add_worksheet(title=self.WORKSHEET_NAME, rows=1000, cols=20)
-                worksheet.append_row(self.FIELD_NAMES)
-            
-            return worksheet
-            
-        except Exception as e:
-            print(f"Error initializing Google Sheet: {str(e)}")
-            raise
+    def ensure_csv_header(self):
+        """Ensure CSV file exists with proper headers"""
+        if not os.path.exists(self.CSV_FILE):
+            with open(self.CSV_FILE, mode='w', newline='') as file:
+                writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
+                writer.writeheader()
     
     def save_calculation(self, fund_name, calculated_nav, equity_portion):
-        """Save today's calculation to Google Sheet if different from existing entry after 3:30 PM"""
+        """Save today's calculation to CSV with proper path handling and duplicate checking"""
+        # Use absolute path for consistent behavior across environments
+        csv_path = os.path.abspath(self.CSV_FILE)
         today = date.today().strftime("%d/%m/%Y")
         now = datetime.now()
         now_time_str = now.strftime("%H:%M:%S")
-        calculation_time = now.time()
         new_nav_rounded = round(calculated_nav, 4)
+        
+        # Debug info
+        print(f"\n=== Debug: Saving Calculation ===")
+        print(f"CSV Path: {csv_path}")
+        print(f"Current Directory: {os.getcwd()}")
+        print(f"File Exists: {os.path.exists(csv_path)}")
+        print(f"Time: {now_time_str} | NAV: {new_nav_rounded}")
 
-        # Get all records from the sheet
-        try:
-            records = self.sheet.get_all_records()
-        except Exception as e:
-            print(f"Error reading from Google Sheet: {str(e)}")
-            return
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+        
+        # Read existing data if file exists
+        existing_rows = []
+        if os.path.exists(csv_path):
+            try:
+                with open(csv_path, mode='r') as file:
+                    reader = csv.DictReader(file)
+                    existing_rows = list(reader)
+                    print(f"Found {len(existing_rows)} existing records")
+            except Exception as e:
+                print(f"⚠️ Error reading existing CSV: {str(e)}")
+                existing_rows = []
 
-        # Check if record already exists for today after 3:30 PM with same calculated_nav
-        for record in reversed(records):
-            if record['date'] == today and record['fund_name'] == fund_name:
+        # Check for duplicates after 3:30 PM
+        cutoff_time = datetime.strptime("15:30:00", "%H:%M:%S").time()
+        if now.time() >= cutoff_time:
+            for row in reversed(existing_rows):
                 try:
-                    row_time = datetime.strptime(record['calculation_time'], "%H:%M:%S").time()
-                    if row_time >= datetime.strptime("15:30:00", "%H:%M:%S").time():
-                        existing_nav = float(record['calculated_nav'])
-                        if round(existing_nav, 4) == new_nav_rounded:
-                            print("Calculation already saved with same NAV after 3:30 PM. Skipping save.")
-                            return  # Do nothing
-                except (ValueError, TypeError):
-                    pass
+                    if (row['date'] == today and 
+                        row['fund_name'] == fund_name and
+                        float(row['calculated_nav']) == new_nav_rounded and
+                        datetime.strptime(row['calculation_time'], "%H:%M:%S").time() >= cutoff_time):
+                        
+                        print("🔄 Duplicate entry found (same NAV after 3:30 PM). Skipping save.")
+                        return
+                except (ValueError, KeyError) as e:
+                    print(f"⚠️ Error parsing row: {str(e)}")
+                    continue
 
-        # If not found or different, save new calculation
-        data = {
+        # Prepare new data
+        new_data = {
             'date': today,
             'calculation_time': now_time_str,
             'calculated_nav': new_nav_rounded,
-            'official_nav': '',
-            'difference': '',
-            'percentage_diff': '',
+            'official_nav': None,
+            'difference': None,
+            'percentage_diff': None,
             'fund_name': fund_name,
             'equity_portion': equity_portion
         }
 
+        # Write to CSV (append if exists, create new otherwise)
         try:
-            self.sheet.append_row([data[field] for field in self.FIELD_NAMES])
-            print(f"\nSaved today's calculation to Google Sheet")
+            file_exists = os.path.exists(csv_path)
+            with open(csv_path, mode='a' if file_exists else 'w', newline='') as file:
+                writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
+                if not file_exists:
+                    writer.writeheader()
+                writer.writerow(new_data)
+            print(f"✅ Saved new entry: {new_data}")
         except Exception as e:
-            print(f"Error saving to Google Sheet: {str(e)}")
+            print(f"❌ Failed to save: {str(e)}")
+            raise
+
     
     def get_previous_calculation(self, fund_name):
         """Get yesterday's calculation for comparison"""
         yesterday = (date.today() - timedelta(days=1)).strftime("%d/%m/%Y")
         
         try:
-            records = self.sheet.get_all_records()
-            for record in reversed(records):  # Read from bottom up
-                if record['date'] == yesterday and record['fund_name'] == fund_name:
-                    return {
-                        'calculated_nav': float(record['calculated_nav']),
-                        'official_nav': None if not record['official_nav'] else float(record['official_nav'])
-                    }
-        except Exception as e:
-            print(f"Error reading from Google Sheet: {str(e)}")
+            with open(self.CSV_FILE, mode='r') as file:
+                reader = csv.DictReader(file)
+                for row in reversed(list(reader)):  # Read from bottom up
+                    if row['date'] == yesterday and row['fund_name'] == fund_name:
+                        return {
+                            'calculated_nav': float(row['calculated_nav']),
+                            'official_nav': None if not row['official_nav'] else float(row['official_nav'])
+                        }
+        except FileNotFoundError:
+            pass
         return None
     
     def update_official_nav(self, fund_name, official_nav):
         """Update yesterday's record with official NAV"""
         yesterday = (date.today() - timedelta(days=1)).strftime("%d/%m/%Y")
+        updated = False
         
-        try:
-            # Get all records and cell positions
-            records = self.sheet.get_all_records()
-            cells = self.sheet.get_all_cells()
-            
-            # Find the row to update (searching from bottom up)
-            for i in reversed(range(len(records))):
-                record = records[i]
-                if record['date'] == yesterday and record['fund_name'] == fund_name:
-                    if not record['official_nav']:
-                        # Calculate the row number (header is row 1, first data is row 2)
-                        row_num = i + 2
-                        
-                        # Find the column indices for the fields we need to update
-                        col_indices = {
-                            'official_nav': self.FIELD_NAMES.index('official_nav') + 1,
-                            'difference': self.FIELD_NAMES.index('difference') + 1,
-                            'percentage_diff': self.FIELD_NAMES.index('percentage_diff') + 1
-                        }
-                        
-                        # Prepare updates
-                        updates = [
-                            (row_num, col_indices['official_nav'], official_nav)
-                        ]
-                        
-                        if record['calculated_nav']:
-                            calculated = float(record['calculated_nav'])
-                            diff = official_nav - calculated
-                            updates.extend([
-                                (row_num, col_indices['difference'], round(diff, 4)),
-                                (row_num, col_indices['percentage_diff'], round((diff / calculated) * 100, 4))
-                            ])
-                        
-                        # Batch update
-                        self.sheet.update_cells([
-                            gspread.Cell(row, col, value)
-                            for row, col, value in updates
-                        ])
-                        
-                        print(f"Updated yesterday's official NAV to {official_nav}")
-                        return True
-        except Exception as e:
-            print(f"Error updating Google Sheet: {str(e)}")
+        # Read all data
+        rows = []
+        with open(self.CSV_FILE, mode='r') as file:
+            reader = csv.DictReader(file)
+            rows = list(reader)
         
-        return False
+        # Find and update yesterday's record
+        for row in reversed(rows):
+            if row['date'] == yesterday and row['fund_name'] == fund_name:
+                if not row['official_nav']:
+                    row['official_nav'] = official_nav
+                    if row['calculated_nav']:
+                        calculated = float(row['calculated_nav'])
+                        diff = official_nav - calculated
+                        row['difference'] = round(diff, 4)
+                        row['percentage_diff'] = round((diff / calculated) * 100, 4)
+                    updated = True
+                break
+        
+        # Write back if updated
+        if updated:
+            with open(self.CSV_FILE, mode='w', newline='') as file:
+                writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
+                writer.writeheader()
+                writer.writerows(rows)
+            print(f"Updated yesterday's official NAV to {official_nav}")
     
     def show_comparison(self, fund_name):
         """Show comparison between calculations and official NAVs"""
@@ -192,21 +167,22 @@ class NAVTracker:
         print("-" * 70)
         
         try:
-            records = self.sheet.get_all_records()
-            for record in reversed(records):
-                if record['fund_name'] == fund_name:
-                    date_str = record['date']
-                    calc_nav = record['calculated_nav'] or '-'
-                    official_nav = record['official_nav'] or '-'
-                    diff = record['difference'] or '-'
-                    perc_diff = record['percentage_diff'] or '-'
-                    time_str = record['calculation_time'] or '-'
-                    
-                    print("{:<12} {:<10} {:<12} {:<12} {:<10} {:<8}".format(
-                        date_str, calc_nav, official_nav, diff, perc_diff, time_str
-                    ))
-        except Exception as e:
-            print(f"Error reading from Google Sheet: {str(e)}")
+            with open(self.CSV_FILE, mode='r') as file:
+                reader = csv.DictReader(file)
+                for row in reversed(list(reader)):
+                    if row['fund_name'] == fund_name:
+                        date_str = row['date']
+                        calc_nav = row['calculated_nav'] or '-'
+                        official_nav = row['official_nav'] or '-'
+                        diff = row['difference'] or '-'
+                        perc_diff = row['percentage_diff'] or '-'
+                        time_str = row['calculation_time'] or '-'
+                        
+                        print("{:<12} {:<10} {:<12} {:<12} {:<10} {:<8}".format(
+                            date_str, calc_nav, official_nav, diff, perc_diff, time_str
+                        ))
+        except FileNotFoundError:
+            print("No historical data available yet")
 
 class MutualFundAnalyzer:
     def __init__(self, url, equity_portion=None, max_workers=None, base_workers=5):
