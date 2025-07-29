@@ -18,7 +18,7 @@ from datetime import timedelta  # Add at top of file
 
 
 class NAVTracker:
-    CSV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nav_comparison.csv")
+    CSV_FILE = "nav_comparison.csv"
     FIELD_NAMES = [
         'date', 'calculation_time', 
         'calculated_nav', 'official_nav', 
@@ -31,64 +31,18 @@ class NAVTracker:
     
     def ensure_csv_header(self):
         """Ensure CSV file exists with proper headers"""
-        try:
-            if not os.path.exists(self.CSV_FILE):
-                with open(self.CSV_FILE, mode='w', newline='') as file:
-                    writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
-                    writer.writeheader()
-        except Exception as e:
-            print(f"Error ensuring CSV header: {str(e)}")
-            raise
-    
-
+        if not os.path.exists(self.CSV_FILE):
+            with open(self.CSV_FILE, mode='w', newline='') as file:
+                writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
+                writer.writeheader()
     
     def save_calculation(self, fund_name, calculated_nav, equity_portion):
         """Save today's calculation to CSV with proper path handling and duplicate checking"""
-        # Use absolute path for consistent behavior across environments
-        csv_path = os.path.abspath(self.CSV_FILE)
         today = date.today().strftime("%d/%m/%Y")
         now = datetime.now()
         now_time_str = now.strftime("%H:%M:%S")
         new_nav_rounded = round(calculated_nav, 4)
         
-        # Debug info
-        print(f"\n=== Debug: Saving Calculation ===")
-        print(f"CSV Path: {csv_path}")
-        print(f"Current Directory: {os.getcwd()}")
-        print(f"File Exists: {os.path.exists(csv_path)}")
-        print(f"Time: {now_time_str} | NAV: {new_nav_rounded}")
-
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
-        
-        # Read existing data if file exists
-        existing_rows = []
-        if os.path.exists(csv_path):
-            try:
-                with open(csv_path, mode='r') as file:
-                    reader = csv.DictReader(file)
-                    existing_rows = list(reader)
-                    print(f"Found {len(existing_rows)} existing records")
-            except Exception as e:
-                print(f"⚠️ Error reading existing CSV: {str(e)}")
-                existing_rows = []
-
-        # Check for duplicates after 3:30 PM
-        cutoff_time = datetime.strptime("15:30:00", "%H:%M:%S").time()
-        if now.time() >= cutoff_time:
-            for row in reversed(existing_rows):
-                try:
-                    if (row['date'] == today and 
-                        row['fund_name'] == fund_name and
-                        float(row['calculated_nav']) == new_nav_rounded and
-                        datetime.strptime(row['calculation_time'], "%H:%M:%S").time() >= cutoff_time):
-                        
-                        print("🔄 Duplicate entry found (same NAV after 3:30 PM). Skipping save.")
-                        return
-                except (ValueError, KeyError) as e:
-                    print(f"⚠️ Error parsing row: {str(e)}")
-                    continue
-
         # Prepare new data
         new_data = {
             'date': today,
@@ -101,19 +55,18 @@ class NAVTracker:
             'equity_portion': equity_portion
         }
 
-        # Write to CSV (append if exists, create new otherwise)
+        # Write to CSV
         try:
-            file_exists = os.path.exists(csv_path)
-            with open(csv_path, mode='a' if file_exists else 'w', newline='') as file:
+            file_exists = os.path.exists(self.CSV_FILE)
+            with open(self.CSV_FILE, mode='a' if file_exists else 'w', newline='') as file:
                 writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
                 if not file_exists:
                     writer.writeheader()
                 writer.writerow(new_data)
-            print(f"✅ Saved new entry: {new_data}")
+            print(f"✅ Saved new entry for {fund_name}")
         except Exception as e:
             print(f"❌ Failed to save: {str(e)}")
             raise
-
     
     def get_previous_calculation(self, fund_name):
         """Get yesterday's calculation for comparison"""
@@ -162,7 +115,7 @@ class NAVTracker:
                 writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
                 writer.writeheader()
                 writer.writerows(rows)
-            print(f"Updated yesterday's official NAV to {official_nav}")
+            print(f"✅ Updated yesterday's official NAV to {official_nav} for {fund_name}")
     
     def show_comparison(self, fund_name):
         """Show comparison between calculations and official NAVs"""
@@ -173,41 +126,27 @@ class NAVTracker:
         print("-" * 70)
         
         try:
-            # First check if file exists and has data
             if not os.path.exists(self.CSV_FILE):
-                print("No historical data file found")
-                return
-                
-            if os.path.getsize(self.CSV_FILE) == 0:
-                print("Historical data file is empty")
+                print("No historical data available yet")
                 return
                 
             with open(self.CSV_FILE, mode='r') as file:
-                # Read all lines to check if we have data beyond header
-                lines = file.readlines()
-                if len(lines) <= 1:
-                    print("No historical data available yet")
-                    return
-                    
-                # Now read properly with DictReader
-                file.seek(0)  # Reset file pointer
                 reader = csv.DictReader(file)
+                rows = list(reader)
                 
-                # Convert to list and reverse for chronological order
-                all_rows = list(reader)
-                if not all_rows:
+                if not rows:
                     print("No historical data available yet")
                     return
                     
                 found_data = False
-                for row in reversed(all_rows):
-                    if row.get('fund_name') == fund_name:
-                        date_str = row.get('date', '-')
-                        calc_nav = row.get('calculated_nav', '-')
-                        official_nav = row.get('official_nav', '-')
-                        diff = row.get('difference', '-')
-                        perc_diff = row.get('percentage_diff', '-')
-                        time_str = row.get('calculation_time', '-')
+                for row in reversed(rows):
+                    if row['fund_name'] == fund_name:
+                        date_str = row['date']
+                        calc_nav = row['calculated_nav'] or '-'
+                        official_nav = row['official_nav'] or '-'
+                        diff = row['difference'] or '-'
+                        perc_diff = row['percentage_diff'] or '-'
+                        time_str = row['calculation_time'] or '-'
                         
                         print("{:<12} {:<10} {:<12} {:<12} {:<10} {:<8}".format(
                             date_str, calc_nav, official_nav, diff, perc_diff, time_str
