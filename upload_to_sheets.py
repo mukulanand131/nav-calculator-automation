@@ -30,9 +30,9 @@ def upload_to_sheets():
             print("Creating new sheet 'NAV Results'")
             sheet = client.create("NAV Results").sheet1
             sheet.append_row([
-                'Date', 'Time', 'Calculated NAV', 
-                'Official NAV', 'Difference', '% Diff',
-                'Fund Name', 'Equity Portion'
+                'date', 'calculation_time', 'calculated_nav', 
+                'official_nav', 'difference', 'percentage_diff',
+                'fund_name', 'equity_portion'
             ])
             print("✓ Created new sheet with headers")
             existing_records = []
@@ -44,6 +44,8 @@ def upload_to_sheets():
         # 4. Process CSV data
         with open('nav_comparison.csv', 'r') as f:
             reader = csv.DictReader(f)
+            # Verify headers
+            print("CSV Headers:", reader.fieldnames)
             new_rows = list(reader)
             print(f"Found {len(new_rows)} new records in CSV")
 
@@ -52,30 +54,39 @@ def upload_to_sheets():
         rows_skipped = 0
 
         for row in new_rows:
-            # Parse the time from the CSV
+            # Verify required fields exist
+            if not all(k in row for k in ['calculation_time', 'date', 'calculated_nav', 'fund_name']):
+                print(f"⚠️ Missing required fields in row: {row}")
+                continue
+
             try:
-                row_time = datetime.strptime(row['Time'], "%H:%M:%S").time()
-            except ValueError:
-                print(f"⚠️ Could not parse time for row: {row}")
+                # Parse the time from the CSV (use correct field name)
+                row_time = datetime.strptime(row['calculation_time'], "%H:%M:%S").time()
+            except ValueError as e:
+                print(f"⚠️ Could not parse time for row: {row}. Error: {e}")
                 continue
 
             # Only consider rows after 3:30 PM for duplicate check
             if row_time < cutoff_time:
-                sheet.append_row(list(row.values()))
+                sheet.append_row([row.get(field, '') for field in [
+                    'date', 'calculation_time', 'calculated_nav',
+                    'official_nav', 'difference', 'percentage_diff',
+                    'fund_name', 'equity_portion'
+                ]])
                 rows_appended += 1
-                print(f"✓ Appended (before cutoff): {row['Date']} {row['Time']} {row['Fund Name']}")
+                print(f"✓ Appended (before cutoff): {row['date']} {row['calculation_time']} {row['fund_name']}")
                 continue
 
             # Check for duplicates in existing records
             is_duplicate = False
             for existing in existing_records:
-                if (existing['Date'] == row['Date'] and
-                    existing['Fund Name'] == row['Fund Name'] and
-                    float(existing['Calculated NAV']) == float(row['Calculated NAV'])):
+                if (existing.get('date') == row['date'] and
+                    existing.get('fund_name') == row['fund_name'] and
+                    str(existing.get('calculated_nav')) == str(row['calculated_nav'])):
                     
                     # Parse existing record's time
                     try:
-                        existing_time = datetime.strptime(existing['Time'], "%H:%M:%S").time()
+                        existing_time = datetime.strptime(existing.get('calculation_time', ''), "%H:%M:%S").time()
                     except ValueError:
                         continue
                     
@@ -84,12 +95,16 @@ def upload_to_sheets():
                         break
 
             if not is_duplicate:
-                sheet.append_row(list(row.values()))
+                sheet.append_row([row.get(field, '') for field in [
+                    'date', 'calculation_time', 'calculated_nav',
+                    'official_nav', 'difference', 'percentage_diff',
+                    'fund_name', 'equity_portion'
+                ]])
                 rows_appended += 1
-                print(f"✓ Appended: {row['Date']} {row['Time']} {row['Fund Name']}")
+                print(f"✓ Appended: {row['date']} {row['calculation_time']} {row['fund_name']}")
             else:
                 rows_skipped += 1
-                print(f"⏩ Skipped duplicate: {row['Date']} {row['Time']} {row['Fund Name']}")
+                print(f"⏩ Skipped duplicate: {row['date']} {row['calculation_time']} {row['fund_name']}")
 
         print(f"\nUpload complete. Appended {rows_appended} rows, skipped {rows_skipped} duplicates.")
                 
