@@ -31,18 +31,14 @@ class SheetManager:
     def _authenticate(self):
         """Authenticate with Google Sheets"""
         try:
-            # 1. Decode credentials
             creds_json = base64.b64decode(os.environ['GDRIVE_CREDENTIALS']).decode('utf-8')
             creds_dict = json.loads(creds_json)
-        
-            # 2. Authenticate with correct scopes
             scope = [
                 'https://spreadsheets.google.com/feeds',
                 'https://www.googleapis.com/auth/drive'
             ]
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
             client = gspread.authorize(creds)
-            print("✓ Authentication successful")
             
             try:
                 return client.open("NAV Results").sheet1
