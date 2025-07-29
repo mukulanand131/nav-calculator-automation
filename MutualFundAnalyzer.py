@@ -396,20 +396,17 @@ class MutualFundAnalyzer:
         """Run the analysis with tracking and comparison"""
         print(f"\nAnalyzing: {self.fund_name}")
 
-        # First check if we need to update yesterday's official NAV
+        # First update yesterday's official NAV if needed
         prev_calc = self.tracker.get_previous_calculation(self.fund_name)
         if prev_calc and (prev_calc['official_nav'] is None or prev_calc['official_nav'] == ''):
-            # We have yesterday's calculation but no official NAV yet
-            # Fetch today's official NAV (which is yesterday's closing)
             official_nav = self.fetch_official_nav()
             if official_nav:
-                success = self.tracker.update_official_nav(self.fund_name, official_nav)
-                if not success:
-                    print("Warning: Failed to update official NAV")
-        
-        # Now proceed with today's analysis
+                print(f"\nUpdating yesterday's official NAV with: {official_nav}")
+                self.tracker.update_official_nav(self.fund_name, official_nav)
+
+        # Now fetch today's data
         start_total_time = datetime.now()
-        
+
         if not self.fetch_mf_data():
             print("Failed to fetch mutual fund data. Please check the URL and try again.")
             return
@@ -434,7 +431,9 @@ class MutualFundAnalyzer:
         current_time = datetime.now().time()
         if current_time >= datetime.strptime("15:30:00", "%H:%M:%S").time():
             self.tracker.save_calculation(self.fund_name, equity_adjusted_nav, self.equity_portion)
-        
+        else:
+            print("\nNot saving calculation yet - waiting until after 3:30 PM")
+
         # Show historical comparison
         self.tracker.show_comparison(self.fund_name)
 
