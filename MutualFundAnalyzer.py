@@ -38,6 +38,20 @@ class SheetManager:
         if self.connected:
             self._ensure_sheet_headers()
 
+    def get_todays_record(self, fund_name, today_date):
+        """Get today's existing record if it exists"""
+        records = self.get_all_records()
+        for idx, record in enumerate(records, start=2):  # Rows start at 2
+            if record['date'] == today_date and record['fund_name'] == fund_name:
+                record['row_num'] = idx  # Store the row number for updates
+                return record
+        return None
+
+    def update_record(self, row_num, record_data):
+        """Update an existing record"""
+        row_data = [record_data.get(field, '') for field in self.FIELD_NAMES]
+        self.sheet.update(f"A{row_num}:H{row_num}", [row_data])
+
     def _authenticate(self):
         """Authenticate with Google Sheets"""
         if 'GDRIVE_CREDENTIALS' not in os.environ:
@@ -388,65 +402,88 @@ class MutualFundAnalyzer:
         """Run the analysis with tracking and comparison"""
         print(f"\nAnalyzing: {self.fund_name}")
 
-        # First check if we need to update yesterday's official NAV
+        # Time thresholds
+        market_open = time_class(9, 15)
+        market_close = time_class(15, 30)
+        current_time = datetime.now().time()
+        today = date.today().strftime("%d/%m/%Y")
+
+        # 1. First handle yesterday's official NAV update
         prev_calc = self.sheet_manager.get_previous_calculation(self.fund_name)
         if prev_calc and (prev_calc['official_nav'] is None or prev_calc['official_nav'] == ''):
-            # We have yesterday's calculation but no official NAV yet
-            # Fetch today's official NAV (which is yesterday's closing)
             official_nav = self.fetch_official_nav()
             if official_nav:
-                success = self.sheet_manager.update_official_nav(self.fund_name, official_nav)
-                if success:
-                    print(f"Updated yesterday's official NAV to {official_nav}")
-                else:
-                    print("Warning: Failed to update official NAV")
+                self.sheet_manager.update_official_nav(self.fund_name, official_nav)
+                print(f"Updated yesterday's official NAV to {official_nav}")
 
-        # Now proceed with today's analysis
-        start_total_time = datetime.now()
-
+        # 2. Fetch current data and calculate NAV
         if not self.fetch_mf_data():
-            print("Failed to fetch mutual fund data. Please check the URL and try again.")
+            print("Failed to fetch mutual fund data")
             return
 
-        fetch_time = (datetime.now() - start_total_time).total_seconds()
-        print(f"\nData fetching completed in {fetch_time:.2f} seconds")
-        print(f"Last day NAV: {self.Last_day_closed:.2f}")
-
-        # Calculate current NAV
-        print("\nCalculating current NAV...")
         percent_change = self.calculate_current_status()
         if percent_change is None:
             print("Error: Could not calculate percentage change")
             return
 
-        current_nav = self.Last_day_closed * (1 + percent_change / 100)
         equity_adjusted_nav = self.Last_day_closed * (1 + (percent_change * self.equity_portion) / 100)
+        rounded_nav = round(equity_adjusted_nav, 4)
 
         print("\nCalculation Results:")
-        print(f"Percentage change (full): {percent_change:.2f}%")
-        print(f"Current NAV (full): {current_nav:.2f}")
-        print(f"Equity-adjusted change: {percent_change * self.equity_portion:.2f}%")
-        print(f"Current NAV (equity-adjusted): {equity_adjusted_nav:.2f}")
+        print(f"Current NAV (equity-adjusted): {rounded_nav:.4f}")
+        print(f"Calculation Time: {current_time}")
 
-        # Save today's calculation if after 3:30 PM
-        current_time = datetime.now().time()
-        cutoff_time = time_class(15, 30)  # Using the renamed import
-        if current_time >= cutoff_time:
+        # 3. Determine if we should store this calculation
+        should_store = False
+        existing_today = self.sheet_manager.get_todays_record(self.fund_name, today)
+
+        if current_time < market_open:
+            print("Before market open - not storing data")
+        elif current_time <= market_close:
+            # Market hours - only store if different from existing
+            if not existing_today:
+                should_store = True
+                reason = "First calculation of the day"
+            elif abs(float(existing_today['calculated_nav']) - rounded_nav) > 0.0001:
+                should_store = True
+                reason = "Significant NAV change"
+            else:
+                print("NAV unchanged - not storing update")
+        else:
+            # After market close - store only if no closing record exists
+            if not existing_today or existing_today['calculation_time'] < market_close:
+                should_store = True
+                reason = "Market close recording"
+            else:
+                print("Already have closing NAV - not storing")
+
+        # 4. Store the record if needed
+        if should_store:
             new_record = {
-                'date': date.today().strftime("%d/%m/%Y"),
+                'date': today,
                 'calculation_time': datetime.now().strftime("%H:%M:%S"),
-                'calculated_nav': round(equity_adjusted_nav, 4),
+                'calculated_nav': rounded_nav,
                 'official_nav': '',
                 'difference': '',
                 'percentage_diff': '',
                 'fund_name': self.fund_name,
                 'equity_portion': self.equity_portion
             }
-            self.sheet_manager.add_record(new_record)
-            print("Saved today's calculation to Google Sheets")
+            try:
+                if existing_today:
+                    # Update existing record
+                    self.sheet_manager.update_record(existing_today['row_num'], new_record)
+                    print(f"✓ Updated today's record ({reason})")
+                else:
+                    # Add new record
+                    self.sheet_manager.add_record(new_record)
+                    print(f"✓ Added new record ({reason})")
+            except Exception as e:
+                print(f"Failed to update sheet: {str(e)}")
 
-        # Show historical comparison
+        # 5. Show historical comparison
         self.sheet_manager.show_comparison(self.fund_name)
+
 
 
     def fetch_official_nav(self):
