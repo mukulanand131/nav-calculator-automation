@@ -18,7 +18,7 @@ from datetime import timedelta  # Add at top of file
 
 
 class NAVTracker:
-    CSV_FILE = "nav_comparison.csv"
+    CSV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nav_comparison.csv")
     FIELD_NAMES = [
         'date', 'calculation_time', 
         'calculated_nav', 'official_nav', 
@@ -31,10 +31,16 @@ class NAVTracker:
     
     def ensure_csv_header(self):
         """Ensure CSV file exists with proper headers"""
-        if not os.path.exists(self.CSV_FILE):
-            with open(self.CSV_FILE, mode='w', newline='') as file:
-                writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
-                writer.writeheader()
+        try:
+            if not os.path.exists(self.CSV_FILE):
+                with open(self.CSV_FILE, mode='w', newline='') as file:
+                    writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
+                    writer.writeheader()
+        except Exception as e:
+            print(f"Error ensuring CSV header: {str(e)}")
+            raise
+    
+
     
     def save_calculation(self, fund_name, calculated_nav, equity_portion):
         """Save today's calculation to CSV with proper path handling and duplicate checking"""
@@ -167,22 +173,52 @@ class NAVTracker:
         print("-" * 70)
         
         try:
+            # First check if file exists and has data
+            if not os.path.exists(self.CSV_FILE):
+                print("No historical data file found")
+                return
+                
+            if os.path.getsize(self.CSV_FILE) == 0:
+                print("Historical data file is empty")
+                return
+                
             with open(self.CSV_FILE, mode='r') as file:
+                # Read all lines to check if we have data beyond header
+                lines = file.readlines()
+                if len(lines) <= 1:
+                    print("No historical data available yet")
+                    return
+                    
+                # Now read properly with DictReader
+                file.seek(0)  # Reset file pointer
                 reader = csv.DictReader(file)
-                for row in reversed(list(reader)):
-                    if row['fund_name'] == fund_name:
-                        date_str = row['date']
-                        calc_nav = row['calculated_nav'] or '-'
-                        official_nav = row['official_nav'] or '-'
-                        diff = row['difference'] or '-'
-                        perc_diff = row['percentage_diff'] or '-'
-                        time_str = row['calculation_time'] or '-'
+                
+                # Convert to list and reverse for chronological order
+                all_rows = list(reader)
+                if not all_rows:
+                    print("No historical data available yet")
+                    return
+                    
+                found_data = False
+                for row in reversed(all_rows):
+                    if row.get('fund_name') == fund_name:
+                        date_str = row.get('date', '-')
+                        calc_nav = row.get('calculated_nav', '-')
+                        official_nav = row.get('official_nav', '-')
+                        diff = row.get('difference', '-')
+                        perc_diff = row.get('percentage_diff', '-')
+                        time_str = row.get('calculation_time', '-')
                         
                         print("{:<12} {:<10} {:<12} {:<12} {:<10} {:<8}".format(
                             date_str, calc_nav, official_nav, diff, perc_diff, time_str
                         ))
-        except FileNotFoundError:
-            print("No historical data available yet")
+                        found_data = True
+                
+                if not found_data:
+                    print(f"No historical data found for {fund_name}")
+                    
+        except Exception as e:
+            print(f"Error reading historical data: {str(e)}")
 
 class MutualFundAnalyzer:
     def __init__(self, url, equity_portion=None, max_workers=None, base_workers=5):
