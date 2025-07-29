@@ -18,7 +18,7 @@ from datetime import timedelta  # Add at top of file
 
 
 class NAVTracker:
-    CSV_FILE = "nav_comparison.csv"
+    CSV_FILE = os.path.abspath("nav_comparison.csv")  # Use absolute path
     FIELD_NAMES = [
         'date', 'calculation_time', 
         'calculated_nav', 'official_nav', 
@@ -31,65 +31,44 @@ class NAVTracker:
     
     def ensure_csv_header(self):
         """Ensure CSV file exists with proper headers"""
-        if not os.path.exists(self.CSV_FILE):
-            with open(self.CSV_FILE, mode='w', newline='') as file:
-                writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
-                writer.writeheader()
+        try:
+            if not os.path.exists(self.CSV_FILE):
+                with open(self.CSV_FILE, mode='w', newline='') as file:
+                    writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
+                    writer.writeheader()
+        except Exception as e:
+            print(f"Error ensuring CSV header: {str(e)}")
+            raise
     
     def save_calculation(self, fund_name, calculated_nav, equity_portion):
-        """Save today's calculation to CSV with proper path handling and duplicate checking"""
+        """Save today's calculation to CSV"""
         today = date.today().strftime("%d/%m/%Y")
-        now = datetime.now()
-        now_time_str = now.strftime("%H:%M:%S")
+        now = datetime.now().strftime("%H:%M:%S")
         new_nav_rounded = round(calculated_nav, 4)
         
-        # Prepare new data
-        new_data = {
+        data = {
             'date': today,
-            'calculation_time': now_time_str,
+            'calculation_time': now,
             'calculated_nav': new_nav_rounded,
-            'official_nav': None,
-            'difference': None,
-            'percentage_diff': None,
+            'official_nav': '',
+            'difference': '',
+            'percentage_diff': '',
             'fund_name': fund_name,
             'equity_portion': equity_portion
         }
 
-        # Write to CSV
         try:
-            file_exists = os.path.exists(self.CSV_FILE)
-            with open(self.CSV_FILE, mode='a' if file_exists else 'w', newline='') as file:
+            with open(self.CSV_FILE, mode='a', newline='') as file:
                 writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
-                if not file_exists:
-                    writer.writeheader()
-                writer.writerow(new_data)
-            print(f"✅ Saved new entry for {fund_name}")
+                writer.writerow(data)
+            print(f"✅ Saved today's calculation: {new_nav_rounded}")
         except Exception as e:
-            print(f"❌ Failed to save: {str(e)}")
-            raise
-    
-    def get_previous_calculation(self, fund_name):
-        """Get yesterday's calculation for comparison"""
-        yesterday = (date.today() - timedelta(days=1)).strftime("%d/%m/%Y")
-        
-        try:
-            with open(self.CSV_FILE, mode='r') as file:
-                reader = csv.DictReader(file)
-                for row in reversed(list(reader)):  # Read from bottom up
-                    if row['date'] == yesterday and row['fund_name'] == fund_name:
-                        return {
-                            'calculated_nav': float(row['calculated_nav']),
-                            'official_nav': None if not row['official_nav'] else float(row['official_nav'])
-                        }
-        except FileNotFoundError:
-            pass
-        return None
+            print(f"❌ Failed to save calculation: {str(e)}")
     
     def update_official_nav(self, fund_name, official_nav):
         """Update yesterday's record with official NAV"""
         yesterday = (date.today() - timedelta(days=1)).strftime("%d/%m/%Y")
-        updated = False
-
+        
         # Read all data
         rows = []
         try:
@@ -99,8 +78,9 @@ class NAVTracker:
         except FileNotFoundError:
             print("No CSV file found to update")
             return False
-
+        
         # Find and update yesterday's record
+        updated = False
         for row in rows:
             if row['date'] == yesterday and row['fund_name'] == fund_name:
                 if not row['official_nav'] or row['official_nav'] == '':
@@ -111,8 +91,8 @@ class NAVTracker:
                         row['difference'] = str(round(diff, 4))
                         row['percentage_diff'] = str(round((diff / calculated) * 100, 4))
                     updated = True
-                break
-
+                    break
+        
         # Write back if updated
         if updated:
             try:
@@ -120,7 +100,7 @@ class NAVTracker:
                     writer = csv.DictWriter(file, fieldnames=self.FIELD_NAMES)
                     writer.writeheader()
                     writer.writerows(rows)
-                print(f"✅ Updated yesterday's official NAV to {official_nav} for {fund_name}")
+                print(f"✅ Updated yesterday's official NAV to {official_nav}")
                 return True
             except Exception as e:
                 print(f"❌ Failed to update official NAV: {str(e)}")
@@ -128,7 +108,6 @@ class NAVTracker:
         else:
             print("No matching record found to update")
             return False
-
     
     def show_comparison(self, fund_name):
         """Show comparison between calculations and official NAVs"""
