@@ -1,90 +1,9 @@
-# name: NAV Calculator Automation
-# on:
-#   schedule:
-#     - cron: '*/5 * * * *'  # Every 5 minutes (UTC)
-#   workflow_dispatch:
-
-
-# jobs:
-#   calculate:
-#     runs-on: ubuntu-latest
-#     timeout-minutes: 10
-#     env:
-#       TZ: Asia/Kolkata
-#       PIP_CACHE_DIR: ~/.cache/pip
-
-#     steps:
-#       # Checkout code
-#       - uses: actions/checkout@v4
-
-#       # Cache Python dependencies only
-#       - name: Cache Python packages
-#         uses: actions/cache@v3
-#         id: pip-cache
-#         with:
-#           path: |
-#             ${{ env.PIP_CACHE_DIR }}
-#             /opt/hostedtoolcache/Python
-#           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-
-#       # Setup Python
-#       - name: Set up Python 3.10
-#         uses: actions/setup-python@v4
-#         with:
-#           python-version: '3.10'
-#           cache: 'pip'
-#           cache-dependency-path: 'requirements.txt'
-
-#       # Install Python dependencies (only if cache missed)
-#       - name: Install Python packages
-#         if: steps.pip-cache.outputs.cache-hit != 'true'
-#         run: |
-#           python -m pip install --upgrade pip
-#           pip install -r requirements.txt
-
-#       # Install Chrome (always, but optimized)
-#       - name: Install Chrome dependencies
-#         run: |
-#           # Check if Chrome is already installed
-#           if ! command -v chromium-browser &> /dev/null; then
-#             echo "Installing Chrome..."
-#             sudo apt-get update -qqy
-#             sudo apt-get install -qqy --no-install-recommends \
-#               chromium-browser \
-#               chromium-driver
-#           else
-#             echo "Chrome already installed, skipping installation"
-#           fi
-#           echo "Chrome version: $(chromium-browser --version)"
-
-#       # Main execution
-#       - name: Run NAV calculation
-#         run: python -u main.py
-
-#       # Google Sheets upload
-#       - name: Update Google Sheet
-#         if: always()
-#         run: python -u upload_to_sheets.py
-#         env:
-#           GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
-
-#       # Archive results
-#       - name: Archive output
-#         if: always()
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: nav-results-${{ github.run_id }}
-#           path: |
-#             nav_comparison.csv
-#             *.log
-#           retention-days: 3
-
-
 name: NAV Calculator Automation
 on:
   schedule:
     - cron: '*/5 * * * *'  # Every 5 minutes (UTC)
   workflow_dispatch:
+
 
 jobs:
   calculate:
@@ -98,7 +17,7 @@ jobs:
       # Checkout code
       - uses: actions/checkout@v4
 
-      # Cache Python dependencies
+      # Cache Python dependencies only
       - name: Cache Python packages
         uses: actions/cache@v3
         id: pip-cache
@@ -116,33 +35,36 @@ jobs:
           cache: 'pip'
           cache-dependency-path: 'requirements.txt'
 
-      # Install Python dependencies
+      # Install Python dependencies (only if cache missed)
       - name: Install Python packages
+        if: steps.pip-cache.outputs.cache-hit != 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # Install Chrome
-      - name: Install Chrome
+      # Install Chrome (always, but optimized)
+      - name: Install Chrome dependencies
         run: |
-          sudo apt-get update -qqy
-          sudo apt-get install -qqy --no-install-recommends \
-            chromium-browser \
-            chromium-driver
+          # Check if Chrome is already installed
+          if ! command -v chromium-browser &> /dev/null; then
+            echo "Installing Chrome..."
+            sudo apt-get update -qqy
+            sudo apt-get install -qqy --no-install-recommends \
+              chromium-browser \
+              chromium-driver
+          else
+            echo "Chrome already installed, skipping installation"
+          fi
           echo "Chrome version: $(chromium-browser --version)"
 
       # Main execution
       - name: Run NAV calculation
-        run: |
-          python -u main.py
-          # Ensure CSV file exists even if empty
-          touch nav_comparison.csv
+        run: python -u main.py
 
       # Google Sheets upload
       - name: Update Google Sheet
         if: always()
-        run: |
-          python -u upload_to_sheets.py
+        run: python -u upload_to_sheets.py
         env:
           GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
 
