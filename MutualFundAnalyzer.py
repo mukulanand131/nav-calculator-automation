@@ -399,10 +399,10 @@ class MutualFundAnalyzer:
                     print(f"Updated yesterday's official NAV to {official_nav}")
                 else:
                     print("Warning: Failed to update official NAV")
-        
+
         # Now proceed with today's analysis
         start_total_time = datetime.now()
-        
+
         if not self.fetch_mf_data():
             print("Failed to fetch mutual fund data. Please check the URL and try again.")
             return
@@ -425,7 +425,8 @@ class MutualFundAnalyzer:
 
         # Save today's calculation if after 3:30 PM
         current_time = datetime.now().time()
-        if current_time >= time(15, 30):  # 3:30 PM
+        cutoff_time = time(15, 30)  # 3:30 PM
+        if current_time >= cutoff_time:
             new_record = {
                 'date': date.today().strftime("%d/%m/%Y"),
                 'calculation_time': datetime.now().strftime("%H:%M:%S"),
@@ -438,9 +439,10 @@ class MutualFundAnalyzer:
             }
             self.sheet_manager.add_record(new_record)
             print("Saved today's calculation to Google Sheets")
-        
+
         # Show historical comparison
         self.sheet_manager.show_comparison(self.fund_name)
+
 
     def fetch_official_nav(self):
         """Fetch the official NAV from Groww"""
