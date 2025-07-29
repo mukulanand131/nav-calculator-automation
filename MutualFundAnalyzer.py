@@ -16,6 +16,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 import re
+from datetime import time as time_class  # Rename the import to avoid conflict
 
 class SheetManager:
     def __init__(self):
@@ -414,6 +415,10 @@ class MutualFundAnalyzer:
         # Calculate current NAV
         print("\nCalculating current NAV...")
         percent_change = self.calculate_current_status()
+        if percent_change is None:
+            print("Error: Could not calculate percentage change")
+            return
+
         current_nav = self.Last_day_closed * (1 + percent_change / 100)
         equity_adjusted_nav = self.Last_day_closed * (1 + (percent_change * self.equity_portion) / 100)
 
@@ -425,7 +430,7 @@ class MutualFundAnalyzer:
 
         # Save today's calculation if after 3:30 PM
         current_time = datetime.now().time()
-        cutoff_time = time(15, 30)  # 3:30 PM
+        cutoff_time = time_class(15, 30)  # Using the renamed import
         if current_time >= cutoff_time:
             new_record = {
                 'date': date.today().strftime("%d/%m/%Y"),
