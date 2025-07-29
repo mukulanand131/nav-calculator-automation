@@ -19,35 +19,43 @@ import re
 
 class SheetManager:
     def __init__(self):
-        self.sheet = self._authenticate()
+        try:
+            self.sheet = self._authenticate()
+            self.connected = True
+        except Exception as e:
+            print(f"Warning: Could not connect to Google Sheets ({str(e)}). Using local mode.")
+            self.connected = False
+            self.local_records = []
+        
         self.FIELD_NAMES = [
             'date', 'calculation_time', 
             'calculated_nav', 'official_nav', 
             'difference', 'percentage_diff',
             'fund_name', 'equity_portion'
         ]
-        self._ensure_sheet_headers()
-    
+        
+        if self.connected:
+            self._ensure_sheet_headers()
+
     def _authenticate(self):
         """Authenticate with Google Sheets"""
-        try:
-            creds_json = base64.b64decode(os.environ['GDRIVE_CREDENTIALS']).decode('utf-8')
-            creds_dict = json.loads(creds_json)
-            scope = [
-                'https://spreadsheets.google.com/feeds',
-                'https://www.googleapis.com/auth/drive'
-            ]
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-            client = gspread.authorize(creds)
+        if 'GDRIVE_CREDENTIALS' not in os.environ:
+            raise Exception("GDRIVE_CREDENTIALS environment variable not set")
             
-            try:
-                return client.open("NAV Results").sheet1
-            except gspread.SpreadsheetNotFound:
-                sheet = client.create("NAV Results").sheet1
-                return sheet
-        except Exception as e:
-            print(f"Failed to authenticate with Google Sheets: {str(e)}")
-            raise
+        creds_json = base64.b64decode(os.environ['GDRIVE_CREDENTIALS']).decode('utf-8')
+        creds_dict = json.loads(creds_json)
+        scope = [
+            'https://spreadsheets.google.com/feeds',
+            'https://www.googleapis.com/auth/drive'
+        ]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        client = gspread.authorize(creds)
+        
+        try:
+            return client.open("NAV Results").sheet1
+        except gspread.SpreadsheetNotFound:
+            sheet = client.create("NAV Results").sheet1
+            return sheet
     
     def _ensure_sheet_headers(self):
         """Ensure the sheet has proper headers"""
