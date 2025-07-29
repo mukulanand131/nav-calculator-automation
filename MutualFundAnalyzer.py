@@ -444,24 +444,39 @@ class MutualFundAnalyzer:
             if not existing_today:
                 should_store = True
                 reason = "First calculation of the day"
-            elif abs(float(existing_today['calculated_nav']) - rounded_nav) > 0.0001:
-                should_store = True
-                reason = "Significant NAV change"
             else:
-                print("NAV unchanged - not storing update")
+                # Compare NAV values
+                existing_nav = float(existing_today['calculated_nav'])
+                if abs(existing_nav - rounded_nav) > 0.0001:
+                    should_store = True
+                    reason = "Significant NAV change"
+                else:
+                    print("NAV unchanged - not storing update")
         else:
             # After market close - store only if no closing record exists
-            if not existing_today or existing_today['calculation_time'] < market_close:
+            if not existing_today:
                 should_store = True
                 reason = "Market close recording"
             else:
-                print("Already have closing NAV - not storing")
+                # Parse the existing time string to compare
+                existing_time_str = existing_today['calculation_time']
+                try:
+                    existing_time = datetime.strptime(existing_time_str, "%H:%M:%S").time()
+                    if existing_time < market_close:
+                        should_store = True
+                        reason = "Market close recording"
+                    else:
+                        print("Already have closing NAV - not storing")
+                except ValueError:
+                    print("Could not parse existing time - storing new record")
+                    should_store = True
+                    reason = "Invalid existing time format"
 
         # 4. Store the record if needed
         if should_store:
             new_record = {
                 'date': today,
-                'calculation_time': datetime.now().strftime("%H:%M:%S"),
+                'calculation_time': current_time.strftime("%H:%M:%S"),
                 'calculated_nav': rounded_nav,
                 'official_nav': '',
                 'difference': '',
@@ -483,6 +498,7 @@ class MutualFundAnalyzer:
 
         # 5. Show historical comparison
         self.sheet_manager.show_comparison(self.fund_name)
+
 
 
 
