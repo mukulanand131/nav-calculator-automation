@@ -4,7 +4,6 @@ on:
     - cron: '*/5 * * * *'  # Every 5 minutes (UTC)
   workflow_dispatch:
 
-
 jobs:
   calculate:
     runs-on: ubuntu-latest
@@ -12,6 +11,7 @@ jobs:
     env:
       TZ: Asia/Kolkata
       PIP_CACHE_DIR: ~/.cache/pip
+      GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
 
     steps:
       # Checkout code
@@ -61,20 +61,12 @@ jobs:
       - name: Run NAV calculation
         run: python -u main.py
 
-      # Google Sheets upload
-      - name: Update Google Sheet
-        if: always()
-        run: python -u upload_to_sheets.py
-        env:
-          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
-
-      # Archive results
-      - name: Archive output
+      # Archive logs (optional)
+      - name: Archive logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nav-results-${{ github.run_id }}
+          name: nav-logs-${{ github.run_id }}
           path: |
-            nav_comparison.csv
             *.log
           retention-days: 3
