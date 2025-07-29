@@ -92,7 +92,7 @@ def upload_to_sheets():
                 
                 # Create timezone-aware datetime for comparison
                 row_datetime = ist.localize(
-                    datetime.combine(row_date, row_time)
+                    datetime.combine(row_date, row_time))
                 
                 # Check if this is an update to yesterday's official NAV
                 if (row_date == yesterday and 
