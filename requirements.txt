@@ -5,4 +5,3 @@ webdriver-manager
 gspread
 oauth2client
 python-dateutil
-gspread-formatting
