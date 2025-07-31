@@ -582,11 +582,11 @@ class MutualFundAnalyzer:
             print(f"Error fetching official NAV: {str(e)}")
         return None
 
-if __name__ == "__main__":
-    urls = [
-        'https://groww.in/mutual-funds/sbihdhr-psu-fund-direct-growth'
-        # Add more URLs as needed
-    ]
+# if __name__ == "__main__":
+#     urls = [
+#         'https://groww.in/mutual-funds/sbihdhr-psu-fund-direct-growth'
+#         # Add more URLs as needed
+#     ]
     
-    analyzer = MutualFundAnalyzer(url, base_workers=5)
-    analyzer.run_analysis()
+#     analyzer = MutualFundAnalyzer(url, base_workers=5)
+#     analyzer.run_analysis()
