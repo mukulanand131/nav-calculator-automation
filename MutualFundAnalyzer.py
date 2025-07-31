@@ -235,6 +235,8 @@ class MutualFundAnalyzer:
                 if match:
                     equity_str = match.group(1).replace('%', '')
                     return float(equity_str) / 100
+                else:
+                    return 0.95
                 return None
 
             except Exception as e:
