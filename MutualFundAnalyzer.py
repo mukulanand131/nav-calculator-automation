@@ -243,7 +243,7 @@ class MutualFundAnalyzer:
         Uses square root scaling with base minimum and optional maximum
         """
         # Square root scaling gives us a good balance between parallelism and overhead
-        calculated = max(self.base_workers, math.floor(math.sqrt(holdings_count) * 1.8)
+        calculated = max(self.base_workers, math.floor(math.sqrt(holdings_count) * 1.8))
         
         # Apply maximum limit if specified
         if self.max_workers is not None:
