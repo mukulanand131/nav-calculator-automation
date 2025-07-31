@@ -139,9 +139,10 @@ class SheetManager:
         
         records = self.get_all_records()
         found_data = False
-        
+
+        count = 0
         for row in reversed(records):
-            if row['fund_name'] == fund_name:
+            if (row['fund_name'] == fund_name) and count !=2:
                 date_str = row['date']
                 calc_nav = row['calculated_nav'] or '-'
                 official_nav = row['official_nav'] or '-'
@@ -153,6 +154,7 @@ class SheetManager:
                     date_str, calc_nav, official_nav, diff, perc_diff, time_str
                 ))
                 found_data = True
+            count = count + 1
         
         if not found_data:
             print(f"No historical data found for {fund_name}")
