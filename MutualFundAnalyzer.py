@@ -1,5 +1,3 @@
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 import os
 import json
 import base64
@@ -23,6 +21,8 @@ class SheetManager:
         try:
             self.client = self._authenticate()
             self.connected = True
+            # Initialize formatting module
+            self.formatting = gspread_formatting
         except Exception as e:
             print(f"Warning: Could not connect to Google Sheets ({str(e)}). Using local mode.")
             self.connected = False
@@ -35,6 +35,88 @@ class SheetManager:
             'fund_name', 'equity_portion'
         ]
         
+    def _setup_conditional_formatting(self, worksheet):
+        """Setup conditional formatting for the difference column (column E)"""
+        try:
+            # Clear existing formatting first
+            rules = get_conditional_format_rules(worksheet)
+            rules.clear()
+            
+            # Rule 1: Difference = 0 (Aqua)
+            zero_rule = ConditionalFormatRule(
+                ranges=[gspread_formatting.Range(worksheet, 2, 5, worksheet.row_count, 5)],
+                booleanRule=BooleanRule(
+                    condition=BooleanCondition('NUMBER_EQ', ['0']),
+                    format=CellFormat(
+                        backgroundColor=Color(0, 1, 1)  # Aqua
+                    )
+                )
+            )
+            rules.append(zero_rule)
+            
+            # Rule 2: Difference between -0.2 and +0.2 (Green)
+            green_rule = ConditionalFormatRule(
+                ranges=[gspread_formatting.Range(worksheet, 2, 5, worksheet.row_count, 5)],
+                booleanRule=BooleanRule(
+                    condition=BooleanCondition('NUMBER_BETWEEN', ['-0.2', '0.2']),
+                    format=CellFormat(
+                        backgroundColor=Color(0, 1, 0)  # Green
+                    )
+                )
+            )
+            rules.append(green_rule)
+            
+            # Rule 3: Difference between 0.2 and 0.3 or -0.2 and -0.3 (Orange)
+            orange_rule_positive = ConditionalFormatRule(
+                ranges=[gspread_formatting.Range(worksheet, 2, 5, worksheet.row_count, 5)],
+                booleanRule=BooleanRule(
+                    condition=BooleanCondition('NUMBER_BETWEEN', ['0.2', '0.3']),
+                    format=CellFormat(
+                        backgroundColor=Color(1, 0.5, 0)  # Orange
+                    )
+                )
+            )
+            rules.append(orange_rule_positive)
+            
+            orange_rule_negative = ConditionalFormatRule(
+                ranges=[gspread_formatting.Range(worksheet, 2, 5, worksheet.row_count, 5)],
+                booleanRule=BooleanRule(
+                    condition=BooleanCondition('NUMBER_BETWEEN', ['-0.3', '-0.2']),
+                    format=CellFormat(
+                        backgroundColor=Color(1, 0.5, 0)  # Orange
+                    )
+                )
+            )
+            rules.append(orange_rule_negative)
+            
+            # Rule 4: All other cases (Red)
+            red_rule = ConditionalFormatRule(
+                ranges=[gspread_formatting.Range(worksheet, 2, 5, worksheet.row_count, 5)],
+                booleanRule=BooleanRule(
+                    condition=BooleanCondition('NUMBER_LT', ['-0.3']),
+                    format=CellFormat(
+                        backgroundColor=Color(1, 0, 0)  # Red
+                    )
+                )
+            )
+            rules.append(red_rule)
+            
+            red_rule_positive = ConditionalFormatRule(
+                ranges=[gspread_formatting.Range(worksheet, 2, 5, worksheet.row_count, 5)],
+                booleanRule=BooleanRule(
+                    condition=BooleanCondition('NUMBER_GT', ['0.3']),
+                    format=CellFormat(
+                        backgroundColor=Color(1, 0, 0)  # Red
+                    )
+                )
+            )
+            rules.append(red_rule_positive)
+            
+            rules.save()
+            
+        except Exception as e:
+            print(f"Warning: Could not setup conditional formatting - {str(e)}")
+
     def get_sheet_for_fund(self, fund_name):
         """Get or create a worksheet for the specific fund"""
         if not self.connected:
@@ -56,6 +138,8 @@ class SheetManager:
             # Create new worksheet if it doesn't exist
             worksheet = spreadsheet.add_worksheet(title=fund_name, rows=1000, cols=20)
             worksheet.append_row(self.FIELD_NAMES)
+            # Setup conditional formatting for new sheet
+            self._setup_conditional_formatting(worksheet)
         
         return worksheet
 
@@ -76,21 +160,6 @@ class SheetManager:
                 record['row_num'] = idx  # Store the row number for updates
                 return record
         return None
-
-    def update_record(self, fund_name, row_num, record_data):
-        """Update an existing record"""
-        worksheet = self.get_sheet_for_fund(fund_name)
-        
-        if not self.connected:
-            # Local mode handling
-            for i, record in enumerate(self.local_records.get(fund_name, [])):
-                if record['date'] == record_data['date']:
-                    self.local_records[fund_name][i] = record_data
-                    break
-            return
-        
-        row_data = [record_data.get(field, '') for field in self.FIELD_NAMES]
-        worksheet.update(f"A{row_num}:H{row_num}", [row_data])
 
     def _authenticate(self):
         """Authenticate with Google Sheets"""
@@ -127,6 +196,60 @@ class SheetManager:
         
         row_data = [record_data.get(field, '') for field in self.FIELD_NAMES]
         worksheet.append_row(row_data)
+        
+        # Get the row number we just added
+        records = worksheet.get_all_records()
+        new_row_num = len(records) + 1  # +1 for header row
+        
+        # Apply formatting to the new row's difference column
+        try:
+            diff_value = float(record_data.get('difference', 0))
+            cell_format = CellFormat()
+            
+            if diff_value == 0:
+                cell_format.backgroundColor = Color(0, 1, 1)  # Aqua
+            elif -0.2 <= diff_value <= 0.2:
+                cell_format.backgroundColor = Color(0, 1, 0)  # Green
+            elif (0.2 < diff_value <= 0.3) or (-0.3 <= diff_value < -0.2):
+                cell_format.backgroundColor = Color(1, 0.5, 0)  # Orange
+            else:
+                cell_format.backgroundColor = Color(1, 0, 0)  # Red
+                
+            format_cell_range(worksheet, f'E{new_row_num}', cell_format)
+        except Exception as e:
+            print(f"Warning: Could not apply cell formatting - {str(e)}")
+
+    def update_record(self, fund_name, row_num, record_data):
+        """Update an existing record"""
+        worksheet = self.get_sheet_for_fund(fund_name)
+        
+        if not self.connected:
+            for i, record in enumerate(self.local_records.get(fund_name, [])):
+                if record['date'] == record_data['date']:
+                    self.local_records[fund_name][i] = record_data
+                    break
+            return
+        
+        row_data = [record_data.get(field, '') for field in self.FIELD_NAMES]
+        worksheet.update(f"A{row_num}:H{row_num}", [row_data])
+        
+        # Apply formatting to the updated row's difference column
+        try:
+            diff_value = float(record_data.get('difference', 0))
+            cell_format = CellFormat()
+            
+            if diff_value == 0:
+                cell_format.backgroundColor = Color(0, 1, 1)  # Aqua
+            elif -0.2 <= diff_value <= 0.2:
+                cell_format.backgroundColor = Color(0, 1, 0)  # Green
+            elif (0.2 < diff_value <= 0.3) or (-0.3 <= diff_value < -0.2):
+                cell_format.backgroundColor = Color(1, 0.5, 0)  # Orange
+            else:
+                cell_format.backgroundColor = Color(1, 0, 0)  # Red
+                
+            format_cell_range(worksheet, f'E{row_num}', cell_format)
+        except Exception as e:
+            print(f"Warning: Could not apply cell formatting - {str(e)}")
     
     def update_official_nav(self, fund_name, official_nav, target_date=None):
         """Update the official NAV for a specific fund and date"""
@@ -584,11 +707,9 @@ class MutualFundAnalyzer:
 
 # if __name__ == "__main__":
 #     urls = [
-#         'https://groww.in/mutual-funds/sbi-psu-fund-direct-growth',
-#         'https://groww.in/mutual-funds/icici-prudential-value-discovery-fund-direct-growth',
+#         'https://groww.in/mutual-funds/sbihdhr-psu-fund-direct-growth'
 #         # Add more URLs as needed
 #     ]
-
-#     for url in urls:
-#         analyzer = MutualFundAnalyzer(url, base_workers=5)
-#         analyzer.run_analysis()
+    
+#     analyzer = MutualFundAnalyzer(url, base_workers=5)
+#     analyzer.run_analysis()
