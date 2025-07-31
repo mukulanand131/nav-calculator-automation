@@ -21,12 +21,12 @@ from datetime import time as time_class  # Rename the import to avoid conflict
 class SheetManager:
     def __init__(self):
         try:
-            self.sheet = self._authenticate()
+            self.client = self._authenticate()
             self.connected = True
         except Exception as e:
             print(f"Warning: Could not connect to Google Sheets ({str(e)}). Using local mode.")
             self.connected = False
-            self.local_records = []
+            self.local_records = {}
         
         self.FIELD_NAMES = [
             'date', 'calculation_time', 
@@ -35,22 +35,62 @@ class SheetManager:
             'fund_name', 'equity_portion'
         ]
         
-        if self.connected:
-            self._ensure_sheet_headers()
+    def get_sheet_for_fund(self, fund_name):
+        """Get or create a worksheet for the specific fund"""
+        if not self.connected:
+            if fund_name not in self.local_records:
+                self.local_records[fund_name] = []
+            return None  # Return None for local mode
+        
+        try:
+            # Open the main spreadsheet
+            spreadsheet = self.client.open("NAV Results")
+        except gspread.SpreadsheetNotFound:
+            # Create new spreadsheet if it doesn't exist
+            spreadsheet = self.client.create("NAV Results")
+        
+        try:
+            # Try to get the worksheet for this fund
+            worksheet = spreadsheet.worksheet(fund_name)
+        except gspread.WorksheetNotFound:
+            # Create new worksheet if it doesn't exist
+            worksheet = spreadsheet.add_worksheet(title=fund_name, rows=1000, cols=20)
+            worksheet.append_row(self.FIELD_NAMES)
+        
+        return worksheet
 
     def get_todays_record(self, fund_name, today_date):
         """Get today's existing record if it exists"""
-        records = self.get_all_records()
+        worksheet = self.get_sheet_for_fund(fund_name)
+        
+        if not self.connected:
+            # Local mode handling
+            for record in self.local_records.get(fund_name, []):
+                if record['date'] == today_date:
+                    return record
+            return None
+        
+        records = worksheet.get_all_records()
         for idx, record in enumerate(records, start=2):  # Rows start at 2
-            if record['date'] == today_date and record['fund_name'] == fund_name:
+            if record['date'] == today_date:
                 record['row_num'] = idx  # Store the row number for updates
                 return record
         return None
 
-    def update_record(self, row_num, record_data):
+    def update_record(self, fund_name, row_num, record_data):
         """Update an existing record"""
+        worksheet = self.get_sheet_for_fund(fund_name)
+        
+        if not self.connected:
+            # Local mode handling
+            for i, record in enumerate(self.local_records.get(fund_name, [])):
+                if record['date'] == record_data['date']:
+                    self.local_records[fund_name][i] = record_data
+                    break
+            return
+        
         row_data = [record_data.get(field, '') for field in self.FIELD_NAMES]
-        self.sheet.update(f"A{row_num}:H{row_num}", [row_data])
+        worksheet.update(f"A{row_num}:H{row_num}", [row_data])
 
     def _authenticate(self):
         """Authenticate with Google Sheets"""
@@ -64,43 +104,63 @@ class SheetManager:
             'https://www.googleapis.com/auth/drive'
         ]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-        client = gspread.authorize(creds)
+        return gspread.authorize(creds)
+    
+    def get_all_records(self, fund_name):
+        """Get all records from the fund's sheet as dictionaries"""
+        worksheet = self.get_sheet_for_fund(fund_name)
         
-        try:
-            return client.open("NAV Results").sheet1
-        except gspread.SpreadsheetNotFound:
-            sheet = client.create("NAV Results").sheet1
-            return sheet
+        if not self.connected:
+            return self.local_records.get(fund_name, [])
+        
+        return worksheet.get_all_records()
     
-    def _ensure_sheet_headers(self):
-        """Ensure the sheet has proper headers"""
-        current_headers = self.sheet.row_values(1)
-        if not current_headers or current_headers != self.FIELD_NAMES:
-            self.sheet.clear()
-            self.sheet.append_row(self.FIELD_NAMES)
-    
-    def get_all_records(self):
-        """Get all records from the sheet as dictionaries"""
-        return self.sheet.get_all_records()
-    
-    def add_record(self, record_data):
-        """Add a new record to the sheet"""
+    def add_record(self, fund_name, record_data):
+        """Add a new record to the fund's sheet"""
+        worksheet = self.get_sheet_for_fund(fund_name)
+        
+        if not self.connected:
+            if fund_name not in self.local_records:
+                self.local_records[fund_name] = []
+            self.local_records[fund_name].append(record_data)
+            return
+        
         row_data = [record_data.get(field, '') for field in self.FIELD_NAMES]
-        self.sheet.append_row(row_data)
+        worksheet.append_row(row_data)
     
     def update_official_nav(self, fund_name, official_nav, target_date=None):
         """Update the official NAV for a specific fund and date"""
         if target_date is None:
             target_date = (date.today() - timedelta(days=1)).strftime("%d/%m/%Y")
         
-        records = self.get_all_records()
+        worksheet = self.get_sheet_for_fund(fund_name)
+        
+        if not self.connected:
+            updated = False
+            for record in self.local_records.get(fund_name, []):
+                if record['date'] == target_date:
+                    if not record['official_nav'] or record['official_nav'] == '':
+                        record['official_nav'] = str(official_nav)
+                        
+                        if record['calculated_nav'] and record['calculated_nav'] != '':
+                            calculated = float(record['calculated_nav'])
+                            diff = official_nav - calculated
+                            percentage_diff = (diff / calculated) * 100
+                            
+                            record['difference'] = str(round(diff, 4))
+                            record['percentage_diff'] = str(round(percentage_diff, 4))
+                        
+                        updated = True
+            return updated
+        
+        records = worksheet.get_all_records()
         updated = False
         
         for idx, row in enumerate(records, start=2):  # Start from row 2 (1-based index)
-            if row['date'] == target_date and row['fund_name'] == fund_name:
+            if row['date'] == target_date:
                 if not row['official_nav'] or row['official_nav'] == '':
                     # Update official NAV
-                    self.sheet.update_cell(idx, 4, str(official_nav))
+                    worksheet.update_cell(idx, 4, str(official_nav))
                     
                     # Calculate and update difference if calculated_nav exists
                     if row['calculated_nav'] and row['calculated_nav'] != '':
@@ -108,8 +168,8 @@ class SheetManager:
                         diff = official_nav - calculated
                         percentage_diff = (diff / calculated) * 100
                         
-                        self.sheet.update_cell(idx, 5, str(round(diff, 4)))
-                        self.sheet.update_cell(idx, 6, str(round(percentage_diff, 4)))
+                        worksheet.update_cell(idx, 5, str(round(diff, 4)))
+                        worksheet.update_cell(idx, 6, str(round(percentage_diff, 4)))
                     
                     updated = True
                     break
@@ -119,10 +179,10 @@ class SheetManager:
     def get_previous_calculation(self, fund_name):
         """Get yesterday's calculation for a fund"""
         yesterday = (date.today() - timedelta(days=1)).strftime("%d/%m/%Y")
-        records = self.get_all_records()
+        records = self.get_all_records(fund_name)
         
         for row in reversed(records):
-            if row['date'] == yesterday and row['fund_name'] == fund_name:
+            if row['date'] == yesterday:
                 return {
                     'calculated_nav': float(row['calculated_nav']) if row['calculated_nav'] else None,
                     'official_nav': float(row['official_nav']) if row['official_nav'] else None
@@ -131,29 +191,29 @@ class SheetManager:
     
     def show_comparison(self, fund_name):
         """Show historical comparison for a fund"""
-        print("\nHistorical Comparison:")
+        print(f"\nHistorical Comparison for {fund_name}:")
         print("{:<12} {:<10} {:<12} {:<12} {:<10} {:<8}".format(
             'Date', 'Calc NAV', 'Official NAV', 'Difference', '% Diff', 'Time'
         ))
         print("-" * 70)
         
-        records = self.get_all_records()
+        records = self.get_all_records(fund_name)
         found_data = False
 
         count = 0
         for row in reversed(records):
-            if row['fund_name'] == fund_name:
-                date_str = row['date']
-                calc_nav = row['calculated_nav'] or '-'
-                official_nav = row['official_nav'] or '-'
-                diff = row['difference'] or '-'
-                perc_diff = row['percentage_diff'] or '-'
-                time_str = row['calculation_time'] or '-'
-                
-                print("{:<12} {:<10} {:<12} {:<12} {:<10} {:<8}".format(
-                    date_str, calc_nav, official_nav, diff, perc_diff, time_str
-                ))
-                found_data = True
+            date_str = row['date']
+            calc_nav = row['calculated_nav'] or '-'
+            official_nav = row['official_nav'] or '-'
+            diff = row['difference'] or '-'
+            perc_diff = row['percentage_diff'] or '-'
+            time_str = row['calculation_time'] or '-'
+            
+            print("{:<12} {:<10} {:<12} {:<12} {:<10} {:<8}".format(
+                date_str, calc_nav, official_nav, diff, perc_diff, time_str
+            ))
+            found_data = True
+            
             if count == 2:
                 break
             count = count + 1
@@ -183,7 +243,7 @@ class MutualFundAnalyzer:
         Uses square root scaling with base minimum and optional maximum
         """
         # Square root scaling gives us a good balance between parallelism and overhead
-        calculated = max(self.base_workers, math.floor(math.sqrt(holdings_count) * 1.8))
+        calculated = max(self.base_workers, math.floor(math.sqrt(holdings_count) * 1.8)
         
         # Apply maximum limit if specified
         if self.max_workers is not None:
@@ -192,7 +252,11 @@ class MutualFundAnalyzer:
 
     def _extract_fund_name(self):
         """Extract fund name from URL"""
-        return (self.url[30:]).title()
+        # Extract the fund name part from the URL
+        fund_part = self.url.split('/')[-1].replace('-direct-growth', '').replace('-', ' ').title()
+        # Remove any "Direct" or "Growth" suffixes
+        fund_part = fund_part.replace('Direct', '').replace('Growth', '').strip()
+        return fund_part
 
     def _clean_company_name(self, name):
         """Clean and standardize company names"""
@@ -266,7 +330,6 @@ class MutualFundAnalyzer:
                 print(f"Automatically determined equity portion: {self.equity_portion*100:.1f}%")
 
         return True
-
 
     def _fetch_mf_data_without_equity(self):
         """Fetch MF data without equity percentage"""
@@ -493,20 +556,17 @@ class MutualFundAnalyzer:
             try:
                 if existing_today:
                     # Update existing record
-                    self.sheet_manager.update_record(existing_today['row_num'], new_record)
+                    self.sheet_manager.update_record(self.fund_name, existing_today['row_num'], new_record)
                     print(f"✓ Updated today's record ({reason})")
                 else:
                     # Add new record
-                    self.sheet_manager.add_record(new_record)
+                    self.sheet_manager.add_record(self.fund_name, new_record)
                     print(f"✓ Added new record ({reason})")
             except Exception as e:
                 print(f"Failed to update sheet: {str(e)}")
 
         # 5. Show historical comparison
         self.sheet_manager.show_comparison(self.fund_name)
-
-
-
 
     def fetch_official_nav(self):
         """Fetch the official NAV from Groww"""
@@ -523,10 +583,9 @@ class MutualFundAnalyzer:
         return None
 
 if __name__ == "__main__":
-    
-    
     urls = [
         'https://groww.in/mutual-funds/sbi-psu-fund-direct-growth',
+        'https://groww.in/mutual-funds/aditya-birla-sun-life-psu-equity-fund-direct-growth',
         # Add more URLs as needed
     ]
 
