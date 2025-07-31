@@ -3,7 +3,6 @@ from MutualFundAnalyzer import MutualFundAnalyzer
 if __name__ == "__main__":
     urls = [
         'https://groww.in/mutual-funds/sbi-psu-fund-direct-growth',
-        'https://groww.in/mutual-funds/icici-prudential-value-discovery-fund-direct-growth',
         'https://groww.in/mutual-funds/aditya-birla-sun-life-psu-equity-fund-direct-growth'
         # Add more URLs as needed
     ]
