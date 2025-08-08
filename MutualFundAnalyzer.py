@@ -345,7 +345,7 @@ class MutualFundAnalyzer:
             script_content = script_content.text
 
             nav_element_start = script_content.find('"nav":')
-            nav_element = script_content[nav_element_start+6:nav_element_start+13]
+            nav_element = script_content[nav_element_start+6:nav_element_start+11]
         
             if not nav_element:
                 raise ValueError("NAV element not found")
@@ -582,10 +582,11 @@ class MutualFundAnalyzer:
             script_content = soup.find('script', {'id': "__NEXT_DATA__"})
             script_content = script_content.text
             nav_element_start = script_content.find('"nav":')
-            nav_element = script_content[nav_element_start+6:nav_element_start+13]
+            nav_element = script_content[nav_element_start+6:nav_element_start+11]
 
             if nav_element:
-                return float(nav_element.strip())
+                return float(nav_element.strip().replace(",",""))
+            
         except Exception as e:
             print(f"Error fetching official NAV: {str(e)}")
         return None
@@ -600,5 +601,6 @@ class MutualFundAnalyzer:
 #     for url in urls:
 #         analyzer = MutualFundAnalyzer(url, base_workers=5)
 #         analyzer.run_analysis()
+
 
 
