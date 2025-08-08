@@ -339,18 +339,20 @@ class MutualFundAnalyzer:
             soup = BeautifulSoup(response.text, 'html.parser')
 
             # Get last day NAV
-            nav_element = soup.find(class_="fd12Cell contentPrimary bodyLargeHeavy")
-            if not nav_element:
-                raise ValueError("NAV element not found")
-
-            self.Last_day_closed = float(nav_element.text.strip()[1:].replace(",", ""))
-
-            # Get holdings data
             script_content = soup.find('script', {'id': "__NEXT_DATA__"})
             if not script_content:
                 raise ValueError("Holdings data script not found")
-
             script_content = script_content.text
+
+            nav_element_start = script_content.find('"nav":')
+            nav_element = script_content[nav_element_start+6:nav_element_start+13]
+        
+            if not nav_element:
+                raise ValueError("NAV element not found")
+
+            self.Last_day_closed = float(nav_element.strip())
+            
+            # Get holdings data
             holdings_start = script_content.find('"holdings":')
             holdings_end = script_content.find('"nav":')
 
@@ -495,6 +497,8 @@ class MutualFundAnalyzer:
             print("Error: Could not calculate percentage change")
             return
 
+        print(f"\nLast Day Closed NAV: {self.Last_day_closed}")
+
         equity_adjusted_nav = self.Last_day_closed * (1 + (percent_change * self.equity_portion) / 100)
         rounded_nav = round(equity_adjusted_nav, 4)
 
@@ -575,9 +579,13 @@ class MutualFundAnalyzer:
             response.raise_for_status()
             soup = BeautifulSoup(response.text, 'html.parser')
 
-            nav_element = soup.find(class_="fd12Cell contentPrimary bodyLargeHeavy")
+            script_content = soup.find('script', {'id': "__NEXT_DATA__"})
+            script_content = script_content.text
+            nav_element_start = script_content.find('"nav":')
+            nav_element = script_content[nav_element_start+6:nav_element_start+13]
+
             if nav_element:
-                return float(nav_element.text.strip()[1:].replace(",", ""))
+                return float(nav_element.strip())
         except Exception as e:
             print(f"Error fetching official NAV: {str(e)}")
         return None
@@ -592,3 +600,4 @@ class MutualFundAnalyzer:
 #     for url in urls:
 #         analyzer = MutualFundAnalyzer(url, base_workers=5)
 #         analyzer.run_analysis()
+
