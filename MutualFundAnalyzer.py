@@ -350,7 +350,7 @@ class MutualFundAnalyzer:
             if not nav_element:
                 raise ValueError("NAV element not found")
 
-            self.Last_day_closed = float(nav_element.strip())
+            self.Last_day_closed = float(nav_element.strip().replace(",",""))
             
             # Get holdings data
             holdings_start = script_content.find('"holdings":')
@@ -600,4 +600,5 @@ class MutualFundAnalyzer:
 #     for url in urls:
 #         analyzer = MutualFundAnalyzer(url, base_workers=5)
 #         analyzer.run_analysis()
+
 
